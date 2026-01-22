@@ -12,6 +12,13 @@ interface NewsItem {
   ai_summary: string;
 }
 
+interface TitleRewrite {
+  rewrittenTitle: string;
+  clickbaitReason: string;
+  originalTitle: string;
+  loading?: boolean;
+}
+
 interface AnalysisResult {
   summary?: string;
   comparison?: string;
@@ -28,16 +35,59 @@ export default function Home() {
   const [analysisMap, setAnalysisMap] = useState<Record<number, AnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<number, string>>({});
   const [expandedNews, setExpandedNews] = useState<number | null>(null);
+  const [titleRewrites, setTitleRewrites] = useState<Record<number, TitleRewrite>>({});
+  const [showOriginalTitle, setShowOriginalTitle] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     fetch("/api/news/")
       .then(res => res.json())
       .then(data => {
-        setNews(data.items || []);
+        const items = data.items || [];
+        setNews(items);
         setLoading(false);
+        
+        // 뉴스 로드 후 백그라운드에서 각 기사의 제목 재작성 요청
+        items.forEach((item: NewsItem, index: number) => {
+          // 요청 분산을 위해 딜레이 추가 (각 기사마다 500ms 간격)
+          setTimeout(() => {
+            rewriteTitleForItem(item);
+          }, index * 500);
+        });
       })
       .catch(() => setLoading(false));
   }, []);
+
+  // 개별 기사 제목 재작성 (useEffect용)
+  const rewriteTitleForItem = async (newsItem: NewsItem) => {
+    setTitleRewrites(prev => ({
+      ...prev,
+      [newsItem.id]: { rewrittenTitle: "", clickbaitReason: "", originalTitle: newsItem.title, loading: true }
+    }));
+
+    try {
+      const res = await fetch("/api/analysis/rewrite-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newsItem.title, content: newsItem.summary })
+      });
+      const data = await res.json();
+      
+      setTitleRewrites(prev => ({
+        ...prev,
+        [newsItem.id]: {
+          rewrittenTitle: data.rewrittenTitle || newsItem.title,
+          clickbaitReason: data.clickbaitReason || "",
+          originalTitle: newsItem.title,
+          loading: false
+        }
+      }));
+    } catch {
+      setTitleRewrites(prev => ({
+        ...prev,
+        [newsItem.id]: { rewrittenTitle: newsItem.title, clickbaitReason: "분석 실패", originalTitle: newsItem.title, loading: false }
+      }));
+    }
+  };
 
   // 오늘의 시사 브리핑 생성
   const generateDailyBrief = async () => {
@@ -121,6 +171,14 @@ export default function Home() {
     return colors[category] || "border-gray-500";
   };
 
+  // 제목 토글
+  const toggleTitleView = (newsId: number) => {
+    setShowOriginalTitle(prev => ({
+      ...prev,
+      [newsId]: !prev[newsId]
+    }));
+  };
+
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-4xl mx-auto">
@@ -190,20 +248,89 @@ export default function Home() {
                     <span className="text-xs text-gray-500">{item.source}</span>
                   </div>
                   
-                  {item.link ? (
-                    <a 
-                      href={item.link} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-lg font-semibold text-gray-900 hover:text-blue-600 hover:underline block"
-                    >
-                      {item.title}
-                    </a>
-                  ) : (
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      {item.title}
-                    </h3>
-                  )}
+                  {/* 제목 영역 */}
+                  <div className="mb-2">
+                    {/* AI 수정 제목 또는 원문 제목 */}
+                    {titleRewrites[item.id]?.loading ? (
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                        <span className="text-sm">AI가 제목을 분석중...</span>
+                      </div>
+                    ) : (
+                      <>
+                        {/* 메인 제목 */}
+                        {item.link ? (
+                          <a 
+                            href={item.link} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-lg font-semibold text-gray-900 hover:text-blue-600 hover:underline block"
+                          >
+                            {showOriginalTitle[item.id] || !titleRewrites[item.id]?.rewrittenTitle
+                              ? item.title
+                              : titleRewrites[item.id].rewrittenTitle}
+                          </a>
+                        ) : (
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {showOriginalTitle[item.id] || !titleRewrites[item.id]?.rewrittenTitle
+                              ? item.title
+                              : titleRewrites[item.id].rewrittenTitle}
+                          </h3>
+                        )}
+
+                        {/* 제목 분석 완료 시 항상 토글 버튼 표시 */}
+                        {titleRewrites[item.id]?.rewrittenTitle && (
+                          <div className="mt-2">
+                            {/* 객관적인 제목인 경우 (수정 불필요) */}
+                            {titleRewrites[item.id].rewrittenTitle === item.title ? (
+                              <button
+                                onClick={() => toggleTitleView(item.id)}
+                                className="text-xs px-2 py-1 bg-green-100 hover:bg-green-200 text-green-800 rounded-md transition-colors flex items-center gap-1"
+                              >
+                                <span>✅</span> 제목 분석 결과 보기
+                              </button>
+                            ) : (
+                              /* Clickbait 제목인 경우 */
+                              <button
+                                onClick={() => toggleTitleView(item.id)}
+                                className="text-xs px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-md transition-colors flex items-center gap-1"
+                              >
+                                {showOriginalTitle[item.id] ? (
+                                  <><span>🤖</span> AI 수정 제목 보기</>
+                                ) : (
+                                  <><span>📰</span> 원문 제목 보기</>
+                                )}
+                              </button>
+                            )}
+
+                            {/* 분석 결과 표시 (토글 시) */}
+                            {showOriginalTitle[item.id] && titleRewrites[item.id]?.clickbaitReason && (
+                              <div className={`mt-2 p-3 rounded-lg ${
+                                titleRewrites[item.id].rewrittenTitle === item.title 
+                                  ? "bg-green-50 border border-green-200" 
+                                  : "bg-amber-50 border border-amber-200"
+                              }`}>
+                                <p className={`text-xs font-medium mb-1 ${
+                                  titleRewrites[item.id].rewrittenTitle === item.title 
+                                    ? "text-green-800" 
+                                    : "text-amber-800"
+                                }`}>
+                                  {titleRewrites[item.id].rewrittenTitle === item.title 
+                                    ? "✅ 제목 분석:" 
+                                    : "⚠️ Clickbait 분석:"}
+                                </p>
+                                <p className={`text-xs ${
+                                  titleRewrites[item.id].rewrittenTitle === item.title 
+                                    ? "text-green-700" 
+                                    : "text-amber-700"
+                                }`}>{titleRewrites[item.id].clickbaitReason}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                   
                   <p className="text-gray-600 text-sm mt-1 mb-3">{item.summary}</p>
                   
