@@ -6,13 +6,11 @@ import re
 
 router = APIRouter()
 
-# 한국 주요 언론사 RSS 피드
+# 한국 주요 언론사 RSS 피드 (3개 분야만)
 RSS_FEEDS = {
     "정치": "https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml",
     "경제": "https://www.chosun.com/arc/outboundfeeds/rss/category/economy/?outputType=xml",
     "사회": "https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml",
-    "국제": "https://www.chosun.com/arc/outboundfeeds/rss/category/international/?outputType=xml",
-    "IT/과학": "https://www.chosun.com/arc/outboundfeeds/rss/category/technology/?outputType=xml",
 }
 
 # 백업용 연합뉴스 RSS
@@ -75,23 +73,21 @@ async def fetch_rss(url: str, category: str, limit: int = 5):
 
 @router.get("/")
 async def get_news_list():
-    """모든 카테고리의 최신 뉴스 가져오기"""
+    """모든 카테고리의 최신 뉴스 가져오기 (분야당 1개씩, 총 3개)"""
     all_news = []
     
-    # RSS 피드에서 실제 뉴스 가져오기 (타임아웃 증가)
+    # RSS 피드에서 실제 뉴스 가져오기 (분야당 1개씩)
     try:
         for category, url in RSS_FEEDS.items():
-            news = await fetch_rss(url, category, limit=2)
+            news = await fetch_rss(url, category, limit=1)
             all_news.extend(news)
-            if len(all_news) >= 8:  # 최대 8개
-                break
     except Exception as e:
         print(f"RSS 피드 가져오기 실패: {e}")
     
     # RSS 실패 시 백업 - 연합뉴스
-    if len(all_news) < 5:
+    if len(all_news) < 3:
         try:
-            backup_news = await fetch_rss(BACKUP_RSS, "종합", limit=8)
+            backup_news = await fetch_rss(BACKUP_RSS, "종합", limit=3)
             all_news.extend(backup_news)
         except Exception as e:
             print(f"백업 RSS 실패: {e}")
@@ -111,7 +107,7 @@ async def get_news_list():
             }
         ]
     
-    return {"items": all_news[:8], "total": len(all_news[:8])}
+    return {"items": all_news[:3], "total": len(all_news[:3])}
 
 @router.get("/today")
 async def get_today_briefing():

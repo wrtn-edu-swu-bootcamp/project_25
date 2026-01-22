@@ -1,4 +1,4 @@
-﻿import os
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -13,18 +13,20 @@ APP_NAME = "News Literacy Platform"
 DEBUG = True
 DATABASE_URL = "sqlite+aiosqlite:///./news_literacy.db"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Settings ?대옒??(?섏쐞 ?명솚??
+# Settings class
 class Settings:
     APP_NAME: str = APP_NAME
     DEBUG: bool = DEBUG
     DATABASE_URL: str = DATABASE_URL
     OPENAI_API_KEY: str = OPENAI_API_KEY
+    GEMINI_API_KEY: str = GEMINI_API_KEY
 
 settings = Settings()
 
-# 濡쒓렇 異쒕젰
-print(f"[STARTUP] API Key loaded: {'YES' if OPENAI_API_KEY else 'NO'}")
-if OPENAI_API_KEY:
-    print(f"[STARTUP] API Key length: {len(OPENAI_API_KEY)}")
-    print(f"[STARTUP] API Key starts with: {OPENAI_API_KEY[:20]}...")
+# Log output
+print(f"[STARTUP] Gemini API Key loaded: {'YES' if GEMINI_API_KEY else 'NO'}")
+if GEMINI_API_KEY:
+    print(f"[STARTUP] Gemini API Key length: {len(GEMINI_API_KEY)}")
+    print(f"[STARTUP] Gemini API Key starts with: {GEMINI_API_KEY[:10]}...")
