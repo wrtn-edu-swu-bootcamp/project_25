@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
 
-const MODEL_NAME = "gemini-2.5-flash";
+const MODEL_NAME = "llama-3.3-70b-versatile";
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   
   if (!apiKey) {
-    return NextResponse.json({ error: "Gemini API key not configured" });
+    return NextResponse.json({ error: "Groq API key not configured" });
   }
   
   try {
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Text is required" });
     }
     
-    const genai = new GoogleGenAI({ apiKey });
+    const groq = new Groq({ apiKey });
     
     const prompt = `당신은 2030세대를 위한 뉴스 분석 전문가입니다. 뉴스를 쉽고 명확하게 3가지 포인트로 요약해주세요:
 1) 핵심 내용
@@ -29,17 +29,24 @@ export async function POST(request: NextRequest) {
 다음 뉴스를 요약해주세요:
 ${text}`;
     
-    const response = await genai.models.generateContent({
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
       model: MODEL_NAME,
-      contents: prompt,
+      temperature: 0.7,
+      max_tokens: 1024,
     });
     
     return NextResponse.json({
-      summary: response.text,
+      summary: completion.choices[0]?.message?.content || "분석 결과를 가져올 수 없습니다.",
       analyzed_at: new Date().toISOString()
     });
   } catch (error) {
-    console.error("Gemini API error:", error);
+    console.error("Groq API error:", error);
     return NextResponse.json({ error: String(error) });
   }
 }
