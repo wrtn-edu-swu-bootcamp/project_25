@@ -5,7 +5,7 @@
 
 ---
 
-## 현재 상태 (2026-01-22)
+## 현재 상태 (2026-01-23)
 
 ### 완료된 작업
 - [x] 프론트엔드/백엔드 기본 구조 구축
@@ -13,9 +13,13 @@
 - [x] OpenAI API에서 Google Gemini API로 전환 (비용 절감)
 - [x] 기능 간소화 (분야 3개, 기사 각 1개)
 - [x] GitHub 푸시 완료
+- [x] google-genai 최신 패키지로 마이그레이션
+- [x] gemini-2.5-flash 모델로 업그레이드 (quota 문제 해결)
 
-### 대기 중인 작업
-- [ ] Gemini API 한도 초기화 대기 (일일 한도 소진 상태)
+### 정상 동작 확인
+- [x] 백엔드 서버 (포트 8000)
+- [x] 프론트엔드 서버 (포트 3000)
+- [x] Gemini API 연결 테스트 성공
 
 ---
 
@@ -25,7 +29,7 @@
 |------|------|
 | 프론트엔드 | Next.js 14, React, TailwindCSS |
 | 백엔드 | FastAPI, Python |
-| AI API | Google Gemini (gemini-2.0-flash-exp) |
+| AI API | Google Gemini (gemini-2.5-flash) |
 | 뉴스 소스 | 조선일보/연합뉴스 RSS |
 
 ---

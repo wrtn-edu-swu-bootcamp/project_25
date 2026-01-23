@@ -5,17 +5,18 @@ from app.config import settings
 import asyncio
 import json
 
-# Google Gemini API
-import google.generativeai as genai
+# Google Gemini API (새로운 google-genai 패키지)
+from google import genai
 
 router = APIRouter()
 
 # Gemini 클라이언트 설정
-model = None
+client = None
+MODEL_NAME = "gemini-2.5-flash"
+
 if settings.GEMINI_API_KEY:
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-2.0-flash-exp")
-    print("[STARTUP] Gemini model initialized: gemini-2.0-flash-exp")
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    print(f"[STARTUP] Gemini client initialized with model: {MODEL_NAME}")
 
 class TextInput(BaseModel):
     text: str
@@ -26,18 +27,19 @@ class TitleRewriteInput(BaseModel):
 
 async def generate_with_gemini(prompt: str) -> str:
     """Gemini API 호출 (비동기)"""
-    if not model:
+    if not client:
         raise Exception("Gemini API key not configured")
     
     response = await asyncio.to_thread(
-        model.generate_content,
-        prompt
+        client.models.generate_content,
+        model=MODEL_NAME,
+        contents=prompt
     )
     return response.text
 
 @router.post("/summary")
 async def summarize_news(input: TextInput):
-    if not model:
+    if not client:
         return {"error": "Gemini API key not configured"}
     
     try:
@@ -58,7 +60,7 @@ async def summarize_news(input: TextInput):
 
 @router.post("/compare")
 async def compare_viewpoints(input: TextInput):
-    if not model:
+    if not client:
         return {"error": "Gemini API key not configured"}
     
     try:
@@ -73,7 +75,7 @@ async def compare_viewpoints(input: TextInput):
 
 @router.post("/context")
 async def get_context(input: TextInput):
-    if not model:
+    if not client:
         return {"error": "Gemini API key not configured"}
     
     try:
@@ -93,7 +95,7 @@ async def get_context(input: TextInput):
 
 @router.post("/factcheck")
 async def fact_check(input: TextInput):
-    if not model:
+    if not client:
         return {"error": "Gemini API key not configured"}
     
     try:
@@ -109,7 +111,7 @@ async def fact_check(input: TextInput):
 @router.post("/rewrite-title")
 async def rewrite_title(input: TitleRewriteInput):
     """기사 내용을 분석하여 clickbait 제목을 객관적인 제목으로 재작성"""
-    if not model:
+    if not client:
         return {"error": "Gemini API key not configured"}
     
     try:
@@ -162,7 +164,7 @@ async def rewrite_title(input: TitleRewriteInput):
 @router.get("/test")
 async def test_gemini():
     """Gemini API 연결 테스트"""
-    if not model:
+    if not client:
         return {"status": "error", "message": "Gemini API key not configured"}
     try:
         result = await generate_with_gemini("안녕하세요! 간단히 인사해주세요.")

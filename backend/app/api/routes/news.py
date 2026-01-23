@@ -3,14 +3,30 @@ from datetime import datetime
 import httpx
 import xml.etree.ElementTree as ET
 import re
+import random
 
 router = APIRouter()
 
-# 한국 주요 언론사 RSS 피드 (3개 분야만)
+# 여러 언론사 RSS 피드 (분야별로 여러 언론사)
 RSS_FEEDS = {
-    "정치": "https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml",
-    "경제": "https://www.chosun.com/arc/outboundfeeds/rss/category/economy/?outputType=xml",
-    "사회": "https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml",
+    "정치": [
+        {"url": "https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml", "source": "조선일보"},
+        {"url": "https://www.hani.co.kr/rss/politics/", "source": "한겨레"},
+        {"url": "https://www.khan.co.kr/rss/rssdata/politic_news.xml", "source": "경향신문"},
+        {"url": "https://rss.donga.com/politics.xml", "source": "동아일보"},
+    ],
+    "경제": [
+        {"url": "https://www.chosun.com/arc/outboundfeeds/rss/category/economy/?outputType=xml", "source": "조선일보"},
+        {"url": "https://www.hani.co.kr/rss/economy/", "source": "한겨레"},
+        {"url": "https://www.khan.co.kr/rss/rssdata/economy_news.xml", "source": "경향신문"},
+        {"url": "https://rss.donga.com/economy.xml", "source": "동아일보"},
+    ],
+    "사회": [
+        {"url": "https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml", "source": "조선일보"},
+        {"url": "https://www.hani.co.kr/rss/society/", "source": "한겨레"},
+        {"url": "https://www.khan.co.kr/rss/rssdata/society_news.xml", "source": "경향신문"},
+        {"url": "https://rss.donga.com/society.xml", "source": "동아일보"},
+    ],
 }
 
 # 백업용 연합뉴스 RSS
@@ -26,11 +42,11 @@ def clean_html(text):
     clean = clean.replace('&nbsp;', ' ').strip()
     return clean[:500] if len(clean) > 500 else clean
 
-async def fetch_rss(url: str, category: str, limit: int = 5):
+async def fetch_rss(url: str, category: str, source: str, limit: int = 10):
     """RSS 피드에서 뉴스 가져오기"""
     news_list = []
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(url, follow_redirects=True)
             if response.status_code != 200:
                 return []
@@ -42,7 +58,7 @@ async def fetch_rss(url: str, category: str, limit: int = 5):
                 title = item.find('title')
                 description = item.find('description')
                 link = item.find('link')
-                guid = item.find('guid')  # 일부 RSS는 guid에 실제 링크가 있음
+                guid = item.find('guid')
                 pub_date = item.find('pubDate')
                 
                 # 링크 추출: link 또는 guid 사용
@@ -52,43 +68,53 @@ async def fetch_rss(url: str, category: str, limit: int = 5):
                 elif guid is not None and guid.text:
                     article_link = guid.text.strip()
                 
-                # 디버그 로그
-                if article_link:
-                    print(f"[RSS] 기사 링크 파싱: {article_link[:80]}")
-                
                 news_list.append({
-                    "id": hash(article_link if article_link else str(idx)) % 100000,
+                    "id": hash(article_link if article_link else f"{source}_{idx}_{random.randint(1,99999)}") % 100000,
                     "title": clean_html(title.text) if title is not None else "제목 없음",
                     "summary": clean_html(description.text) if description is not None else "",
                     "category": category,
-                    "source": "조선일보" if "chosun" in url else "연합뉴스",
+                    "source": source,
                     "link": article_link,
                     "published_at": pub_date.text if pub_date is not None else datetime.now().isoformat(),
                     "ai_summary": ""
                 })
     except Exception as e:
-        print(f"RSS 가져오기 실패 ({category}): {e}")
+        print(f"RSS 가져오기 실패 ({source} - {category}): {e}")
     
     return news_list
 
 @router.get("/")
 async def get_news_list():
-    """모든 카테고리의 최신 뉴스 가져오기 (분야당 1개씩, 총 3개)"""
+    """모든 카테고리의 최신 뉴스 가져오기 (분야당 1개씩, 총 3개, 랜덤 언론사)"""
     all_news = []
     
-    # RSS 피드에서 실제 뉴스 가져오기 (분야당 1개씩)
-    try:
-        for category, url in RSS_FEEDS.items():
-            news = await fetch_rss(url, category, limit=1)
-            all_news.extend(news)
-    except Exception as e:
-        print(f"RSS 피드 가져오기 실패: {e}")
+    for category, feeds in RSS_FEEDS.items():
+        # 랜덤하게 언론사 순서 섞기
+        shuffled_feeds = feeds.copy()
+        random.shuffle(shuffled_feeds)
+        
+        category_news = []
+        for feed in shuffled_feeds:
+            # 각 언론사에서 여러 기사 가져오기
+            news = await fetch_rss(feed["url"], category, feed["source"], limit=10)
+            if news:
+                category_news.extend(news)
+                break  # 첫 번째 성공한 언론사에서 가져오면 멈춤
+        
+        # 가져온 기사 중 랜덤으로 1개 선택
+        if category_news:
+            selected = random.choice(category_news)
+            all_news.append(selected)
     
     # RSS 실패 시 백업 - 연합뉴스
     if len(all_news) < 3:
         try:
-            backup_news = await fetch_rss(BACKUP_RSS, "종합", limit=3)
-            all_news.extend(backup_news)
+            backup_news = await fetch_rss(BACKUP_RSS, "종합", "연합뉴스", limit=10)
+            if backup_news:
+                # 부족한 만큼 랜덤 선택
+                needed = 3 - len(all_news)
+                random.shuffle(backup_news)
+                all_news.extend(backup_news[:needed])
         except Exception as e:
             print(f"백업 RSS 실패: {e}")
     

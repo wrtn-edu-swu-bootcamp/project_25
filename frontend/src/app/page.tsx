@@ -27,23 +27,51 @@ interface AnalysisResult {
 export default function Home() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [analysisMap, setAnalysisMap] = useState<Record<number, AnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<number, string>>({});
   const [expandedNews, setExpandedNews] = useState<number | null>(null);
   const [titleRewrites, setTitleRewrites] = useState<Record<number, TitleRewrite>>({});
   const [showOriginalTitle, setShowOriginalTitle] = useState<Record<number, boolean>>({});
 
+  // 뉴스 가져오기 함수
+  const fetchNews = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const res = await fetch("/api/news/");
+      const data = await res.json();
+      const items = data.items || [];
+      setNews(items);
+      
+      // 새로고침 시 기존 분석 결과 초기화
+      if (isRefresh) {
+        setAnalysisMap({});
+        setTitleRewrites({});
+        setShowOriginalTitle({});
+        setExpandedNews(null);
+      }
+    } catch (error) {
+      console.error("뉴스 가져오기 실패:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // 새로고침 핸들러
+  const handleRefresh = () => {
+    if (!refreshing) {
+      fetchNews(true);
+    }
+  };
+
   useEffect(() => {
-    fetch("/api/news/")
-      .then(res => res.json())
-      .then(data => {
-        const items = data.items || [];
-        setNews(items);
-        setLoading(false);
-        // Note: 자동 제목 분석 비활성화 - Rate Limit (분당 3개) 때문에 
-        // 사용자가 직접 분석 버튼을 클릭하도록 변경
-      })
-      .catch(() => setLoading(false));
+    fetchNews();
   }, []);
 
   // 개별 기사 제목 재작성
@@ -178,9 +206,25 @@ export default function Home() {
 
         {/* 뉴스 목록 */}
         <div className="bg-white rounded-2xl shadow-xl p-6">
-          <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center gap-2">
-            <span className="text-2xl">📰</span> 오늘의 뉴스
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl">📰</span> 오늘의 뉴스
+            </h2>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                refreshing || loading
+                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:from-blue-600 hover:to-indigo-600 shadow-md hover:shadow-lg"
+              }`}
+            >
+              <span className={`text-lg ${refreshing ? "animate-spin" : ""}`}>
+                🔄
+              </span>
+              {refreshing ? "불러오는 중..." : "다른 기사 보기"}
+            </button>
+          </div>
 
           {loading ? (
             <div className="flex justify-center py-12">
