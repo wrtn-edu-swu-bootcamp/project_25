@@ -33,6 +33,7 @@ export default function Home() {
   const [expandedNews, setExpandedNews] = useState<number | null>(null);
   const [titleRewrites, setTitleRewrites] = useState<Record<number, TitleRewrite>>({});
   const [showOriginalTitle, setShowOriginalTitle] = useState<Record<number, boolean>>({});
+  const [expandedAnalysis, setExpandedAnalysis] = useState<Record<number, boolean>>({});
 
   // 뉴스 가져오기 함수
   const fetchNews = async (isRefresh = false) => {
@@ -43,9 +44,26 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch("/api/news/");
+      // 캐시 방지를 위해 timestamp 추가
+      const timestamp = new Date().getTime();
+      const res = await fetch(`/api/news/?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        }
+      });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
       const items = data.items || [];
+      
+      if (items.length === 0) {
+        console.warn("뉴스 데이터가 비어있습니다.");
+      }
+      
       setNews(items);
       
       // 새로고침 시 기존 분석 결과 초기화
@@ -57,6 +75,8 @@ export default function Home() {
       }
     } catch (error) {
       console.error("뉴스 가져오기 실패:", error);
+      // 에러 발생 시 기존 뉴스 유지하거나 빈 배열로 설정
+      // setNews([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -127,6 +147,31 @@ export default function Home() {
   const analyzeNews = async (newsItem: NewsItem, type: string) => {
     setLoadingAnalysis(prev => ({ ...prev, [newsItem.id]: type }));
 
+    // localStorage 캐시 확인
+    const cacheKey = `analysis_${newsItem.id}`;
+    const cached = localStorage.getItem(cacheKey);
+    
+    if (cached) {
+      try {
+        const { summary, timestamp } = JSON.parse(cached);
+        const now = Date.now();
+        const cacheAge = now - timestamp;
+        const cacheValidDuration = 24 * 60 * 60 * 1000; // 24시간
+        
+        if (cacheAge < cacheValidDuration) {
+          // 캐시 유효 - 사용
+          setAnalysisMap(prev => ({
+            ...prev,
+            [newsItem.id]: { summary }
+          }));
+          setLoadingAnalysis(prev => ({ ...prev, [newsItem.id]: "" }));
+          return;
+        }
+      } catch {
+        // 캐시 파싱 실패 - 무시하고 계속
+      }
+    }
+
     try {
       const res = await fetch("/api/analysis/summary", {
         method: "POST",
@@ -150,6 +195,12 @@ export default function Home() {
         setAnalysisMap(prev => ({
           ...prev,
           [newsItem.id]: { summary: data.summary }
+        }));
+        
+        // 성공 시 캐시에 저장
+        localStorage.setItem(cacheKey, JSON.stringify({
+          summary: data.summary,
+          timestamp: Date.now()
         }));
       }
     } catch {
@@ -192,56 +243,93 @@ export default function Home() {
     }));
   };
 
+  // 오늘 날짜 포맷팅
+  const getTodayDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1;
+    const date = today.getDate();
+    const dayNames = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+    const dayName = dayNames[today.getDay()];
+    return `${year}년 ${month}월 ${date}일 ${dayName}`;
+  };
+
+  // 발간일시 포맷팅
+  const formatPublishedDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}.${month}.${day} ${hours}:${minutes}`;
+    } catch {
+      return dateString;
+    }
+  };
+
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-6 bg-[#f8fafc]">
       <div className="max-w-4xl mx-auto">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-4">
-            뉴스 리터러시 플랫폼
+        <header className="mb-6">
+          <h1 className="text-[2.5rem] font-bold text-[#1a365d] mb-2" style={{ fontFamily: 'var(--font-noto-serif)' }}>
+            HOLD ON
           </h1>
-          <p className="text-xl text-white/80">
-            2030세대를 위한 AI 뉴스 분석 서비스
+          <p className="text-xl text-[#475569] mb-3" style={{ fontFamily: 'var(--font-noto-sans)' }}>
+            잠깐, 다시 읽어보세요
           </p>
+          <div className="text-sm text-[#475569] font-medium">
+            {getTodayDate()}
+          </div>
         </header>
 
         {/* 뉴스 목록 */}
-        <div className="bg-white rounded-2xl shadow-xl p-6">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <h2 className="text-2xl font-semibold text-[#1a365d] flex items-center gap-2" style={{ fontFamily: 'var(--font-noto-sans)' }}>
               <span className="text-2xl">📰</span> 오늘의 뉴스
             </h2>
             <button
               onClick={handleRefresh}
               disabled={refreshing || loading}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all ${
                 refreshing || loading
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:from-blue-600 hover:to-indigo-600 shadow-md hover:shadow-lg"
+                  : "bg-[#1a365d] text-white hover:bg-[#1e3a5f] shadow-sm hover:shadow"
               }`}
+              style={{ fontFamily: 'var(--font-noto-sans)' }}
             >
               <span className={`text-lg ${refreshing ? "animate-spin" : ""}`}>
                 🔄
               </span>
-              {refreshing ? "불러오는 중..." : "다른 기사 보기"}
+              {refreshing ? "불러오는 중..." : "다음 기사"}
             </button>
           </div>
 
           {loading ? (
             <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1a365d]"></div>
             </div>
           ) : (
             <div className="space-y-4">
               {news.map((item) => (
                 <div 
                   key={item.id} 
-                  className={`border-l-4 ${getCategoryBorder(item.category)} pl-4 py-4 bg-gray-50 rounded-r-lg transition-all`}
+                  className={`border-l-4 ${getCategoryBorder(item.category)} pl-4 py-4 bg-gray-50 rounded-r-md transition-all border border-gray-200`}
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded border ${getCategoryColor(item.category)}`}>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded border ${getCategoryColor(item.category)}`} style={{ fontFamily: 'var(--font-noto-sans)' }}>
                       {item.category}
                     </span>
-                    <span className="text-xs text-gray-500">{item.source}</span>
+                    <span className="text-xs text-[#475569] font-medium px-1.5 py-0.5 bg-yellow-200/60 rounded-sm" style={{ fontFamily: 'var(--font-noto-sans)' }}>
+                      {item.source}
+                    </span>
+                    {item.published_at && (
+                      <span className="text-xs text-[#475569]" style={{ fontFamily: 'var(--font-noto-sans)' }}>
+                        · {formatPublishedDate(item.published_at)}
+                      </span>
+                    )}
                   </div>
                   
                   {/* 제목 영역 */}
@@ -250,7 +338,7 @@ export default function Home() {
                     {titleRewrites[item.id]?.loading ? (
                       <div className="flex items-center gap-2 text-gray-500">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                        <span className="text-sm">AI가 제목을 분석중...</span>
+                        <span className="text-sm">제목을 점검하는 중...</span>
                       </div>
                     ) : (
                       <>
@@ -260,14 +348,15 @@ export default function Home() {
                             href={item.link} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-lg font-semibold text-gray-900 hover:text-blue-600 hover:underline block"
+                            className="text-[1.25rem] font-semibold text-[#1a365d] hover:text-[#c2410c] hover:underline block"
+                            style={{ fontFamily: 'var(--font-noto-sans)' }}
                           >
                             {showOriginalTitle[item.id] || !titleRewrites[item.id]?.rewrittenTitle
                               ? item.title
                               : titleRewrites[item.id].rewrittenTitle}
                           </a>
                         ) : (
-                          <h3 className="text-lg font-semibold text-gray-900">
+                          <h3 className="text-[1.25rem] font-semibold text-[#1a365d]" style={{ fontFamily: 'var(--font-noto-sans)' }}>
                             {showOriginalTitle[item.id] || !titleRewrites[item.id]?.rewrittenTitle
                               ? item.title
                               : titleRewrites[item.id].rewrittenTitle}
@@ -280,15 +369,17 @@ export default function Home() {
                             /* 아직 분석 안 된 경우: 분석 버튼 표시 */
                             <button
                               onClick={() => rewriteTitleForItem(item)}
-                              className="text-xs px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 rounded-md transition-colors flex items-center gap-1"
+                              className="text-xs px-2 py-1 bg-[#1a365d]/10 hover:bg-[#1a365d]/20 text-[#1a365d] rounded-md transition-colors flex items-center gap-1"
+                              style={{ fontFamily: 'var(--font-noto-sans)' }}
                             >
-                              <span>🔍</span> 제목 Clickbait 분석
+                              <span>🔍</span> 제목 점검하기
                             </button>
                           ) : titleRewrites[item.id].rewrittenTitle === item.title ? (
                             /* 객관적인 제목인 경우 (수정 불필요) */
                             <button
                               onClick={() => toggleTitleView(item.id)}
                               className="text-xs px-2 py-1 bg-green-100 hover:bg-green-200 text-green-800 rounded-md transition-colors flex items-center gap-1"
+                              style={{ fontFamily: 'var(--font-noto-sans)' }}
                             >
                               <span>✅</span> 제목 분석 결과 보기
                             </button>
@@ -297,9 +388,10 @@ export default function Home() {
                             <button
                               onClick={() => toggleTitleView(item.id)}
                               className="text-xs px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-md transition-colors flex items-center gap-1"
+                              style={{ fontFamily: 'var(--font-noto-sans)' }}
                             >
                               {showOriginalTitle[item.id] ? (
-                                <><span>🤖</span> AI 수정 제목 보기</>
+                                <><span>📋</span> 다른 표현 보기</>
                               ) : (
                                 <><span>📰</span> 원문 제목 보기</>
                               )}
@@ -334,24 +426,36 @@ export default function Home() {
                     )}
                   </div>
                   
-                  <p className="text-gray-600 text-sm mt-1 mb-3">{item.summary}</p>
+                  <p className="text-[#475569] text-[0.95rem] mt-1 mb-3 leading-relaxed" style={{ fontFamily: 'var(--font-noto-sans)' }}>{item.summary}</p>
                   
                   {/* AI 분석 버튼들 */}
                   <div className="flex flex-wrap gap-2 mt-3">
                     <button
                       onClick={() => {
-                        setExpandedNews(expandedNews === item.id ? null : item.id);
-                        if (!analysisMap[item.id]?.summary) {
+                        // 이미 분석 결과가 있으면 토글만, 없으면 API 호출 후 펼침
+                        if (analysisMap[item.id]?.summary) {
+                          setExpandedAnalysis(prev => ({
+                            ...prev,
+                            [item.id]: !prev[item.id]
+                          }));
+                        } else {
                           analyzeNews(item, "summary");
+                          setExpandedAnalysis(prev => ({
+                            ...prev,
+                            [item.id]: true
+                          }));
                         }
                       }}
                       disabled={loadingAnalysis[item.id] === "summary"}
-                      className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
+                      className="px-3 py-1.5 bg-[#1a365d] hover:bg-[#1e3a5f] text-white rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
+                      style={{ fontFamily: 'var(--font-noto-sans)' }}
                     >
                       {loadingAnalysis[item.id] === "summary" ? (
                         <><span className="animate-spin">⏳</span> 분석중...</>
+                      ) : expandedAnalysis[item.id] && analysisMap[item.id]?.summary ? (
+                        <><span>📋</span> 접기</>
                       ) : (
-                        <><span>🤖</span> AI 요약</>
+                        <><span>📋</span> 읽기 도우미</>
                       )}
                     </button>
 
@@ -360,7 +464,8 @@ export default function Home() {
                         href={item.link}
                         target="_blank"
                         rel="noopener noreferrer" 
-                        className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md text-xs font-medium transition-colors flex items-center gap-1"
+                        style={{ fontFamily: 'var(--font-noto-sans)' }}
                       >
                         <span>🔗</span> 원문보기
                       </a>
@@ -368,13 +473,19 @@ export default function Home() {
                   </div>
 
                   {/* AI 분석 결과 표시 */}
-                  {analysisMap[item.id]?.summary && (
+                  {analysisMap[item.id]?.summary && expandedAnalysis[item.id] && (
                     <div className="mt-4">
-                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                        <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
-                          <span>🤖</span> AI 요약 (핵심 포인트 & 시사점)
+                      <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                        <p className="text-xs text-gray-500 mb-2 italic" style={{ fontFamily: 'var(--font-noto-sans)' }}>
+                          아래는 참고용 분석입니다. 최종 판단은 본인의 몫입니다.
+                        </p>
+                        <h4 className="font-medium text-gray-600 mb-2 flex items-center gap-2 text-sm" style={{ fontFamily: 'var(--font-noto-sans)' }}>
+                          <span>📋</span> 참고: 읽기 도우미
                         </h4>
-                        <p className="text-blue-900 text-sm whitespace-pre-wrap leading-relaxed">{analysisMap[item.id].summary}</p>
+                        <p className="text-[#475569] text-[0.9rem] whitespace-pre-wrap leading-relaxed mb-3" style={{ fontFamily: 'var(--font-noto-sans)' }}>{analysisMap[item.id].summary}</p>
+                        <p className="text-xs text-gray-500 italic pt-2 border-t border-gray-200" style={{ fontFamily: 'var(--font-noto-sans)' }}>
+                          이 분석에 동의하시나요? 다른 관점도 생각해보세요.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -384,8 +495,8 @@ export default function Home() {
           )}
         </div>
 
-        <footer className="mt-12 text-center text-white/60 text-sm">
-          뉴스 리터러시 플랫폼 - 균형 잡힌 시사 이해를 돕습니다
+        <footer className="mt-12 text-center text-[#475569] text-sm" style={{ fontFamily: 'var(--font-noto-sans)' }}>
+          HOLD ON - AI가 아닌 당신이 판단합니다
         </footer>
       </div>
     </div>

@@ -3,7 +3,15 @@
 @tailwind utilities;
 
 body {
-  font-family: system-ui, sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  font-family: 'Noto Sans KR', system-ui, sans-serif;
+  background: #f8fafc;
   min-height: 100vh;
+}
+
+/* 색상 변수 정의 */
+:root {
+  --main-color: #1a365d; /* 네이비 블루 */
+  --secondary-color: #475569; /* 슬레이트 그레이 */
+  --accent-color: #c2410c; /* 딥 오렌지 */
+  --bg-color: #f8fafc; /* 밝은 그레이/화이트 */
 }
